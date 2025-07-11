@@ -8,9 +8,7 @@ node_modules/
 uploads/
 
 # File JavaScript riêng lẻ (có thể là script tạm thời hoặc không cần commit)
-mienbac.js
-miennam.js
-mientrung.js
+
 
 # File khóa Service Account
 /server/xsmbwin-3eda45337a28.json

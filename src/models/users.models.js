@@ -38,11 +38,14 @@ const userSchema = new mongoose.Schema({
     titles: [{ type: String, enum: TITLES, default: 'Tân thủ' }],
     points: { type: Number, default: 0 },
     level: { type: Number, default: 1 },
-    winCount: { type: Number, default: 0 }, // Thêm trường winCount
+    winCount: { type: Number, default: 0 },
     role: { type: String, enum: ['USER', 'ADMIN'], default: 'USER' },
     refreshTokens: [refreshTokenSchema],
     failedLoginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date, default: null },
+    isOnline: { type: Boolean, default: false }, // Thêm trường isOnline
+    lastActive: { type: Date }, // Thêm trường lastActive
+    socketId: { type: String, default: null },
     createdAt: {
         type: Date,
         default: () => moment.tz('Asia/Ho_Chi_Minh').toDate()

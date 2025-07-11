@@ -7,9 +7,9 @@ const moment = require('moment-timezone');
 const { authenticate } = require('../auth/auth.routes');
 const userModel = require('../../models/users.models');
 const LotteryRegistration = require('../../models/lottery.models');
-const XSMB = require('../../models/XS_MB.models');
-const XSMN = require('../../models/XS_MN.models');
-const XSMT = require('../../models/XS_MT.models');
+// const XSMB = require('../../models/XS_MB.models');
+// const XSMN = require('../../models/XS_MN.models');
+// const XSMT = require('../../models/XS_MT.models');
 const Event = require('../../models/event.models');
 const Notification = require('../../models/notification.models'); // Thêm model Notification
 const { broadcastComment } = require('../../websocket.js');
@@ -238,7 +238,66 @@ const checkLotteryResults = async (region, Model) => {
         });
     }
 };
+router.get('/events', async (req, res) => {
+    try {
+        const { type = 'event', startDate, endDate, page = 1, limit = 100 } = req.query;
+        const query = { type };
 
+        // Lọc theo ngày nếu có startDate và endDate
+        if (startDate && endDate) {
+            try {
+                const start = moment.tz(startDate, 'Asia/Ho_Chi_Minh').startOf('day').toDate();
+                const end = moment.tz(endDate, 'Asia/Ho_Chi_Minh').endOf('day').toDate();
+                if (!moment(start).isValid() || !moment(end).isValid()) {
+                    return res.status(400).json({ message: 'Ngày không hợp lệ' });
+                }
+                query.createdAt = {
+                    $gte: start,
+                    $lte: end,
+                };
+            } catch (err) {
+                console.error('Invalid date range:', { startDate, endDate });
+                return res.status(400).json({ message: 'Định dạng ngày không hợp lệ' });
+            }
+        }
+
+        // Lấy danh sách sự kiện
+        const events = await Event.find(query)
+            .populate('createdBy', 'username fullname img')
+            .sort({ createdAt: -1 }) // Sắp xếp mới nhất trước
+            .skip((page - 1) * Number(limit))
+            .limit(Number(limit))
+            .lean();
+
+        // Đếm số lượng đăng ký cho mỗi sự kiện
+        const eventIds = events.map(event => event._id);
+        const registrationCounts = await LotteryRegistration.aggregate([
+            { $match: { eventId: { $in: eventIds }, isEvent: false } },
+            { $group: { _id: "$eventId", count: { $sum: 1 } } }
+        ]);
+
+        // Thêm registrationCount và viewCount vào kết quả
+        const eventsWithCounts = events.map(event => ({
+            ...event,
+            registrationCount: registrationCounts.find(reg => reg._id.toString() === event._id.toString())?.count || 0,
+            viewCount: event.viewCount || 0
+        }));
+
+        // Đếm tổng số sự kiện
+        const total = await Event.countDocuments(query);
+
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.status(200).json({
+            events: eventsWithCounts,
+            total,
+            page: Number(page),
+            limit: Number(limit)
+        });
+    } catch (err) {
+        console.error('Error in GET /lottery/events:', err.message);
+        res.status(500).json({ message: err.message || 'Đã có lỗi khi lấy danh sách sự kiện' });
+    }
+});
 // Thêm endpoint để tạo sự kiện mới
 router.post('/events', authenticate, async (req, res) => {
     try {
@@ -400,7 +459,7 @@ router.get('/check-limit', authenticate, async (req, res) => {
 
 router.get('/registrations', authenticate, async (req, res) => {
     try {
-        const { region, userId, eventId, page = 1, limit = 20, isReward, isEvent } = req.query;
+        const { region, userId, eventId, page = 1, limit = 50, isReward, isEvent } = req.query;
         const query = {};
         if (region) {
             query.region = region;
@@ -445,57 +504,57 @@ router.get('/registrations', authenticate, async (req, res) => {
     }
 });
 
-router.get('/results', authenticate, async (req, res) => {
-    try {
-        const { region, date } = req.query;
-        if (!region || !['Nam', 'Trung', 'Bac'].includes(region)) {
-            return res.status(400).json({ message: 'Miền không hợp lệ' });
-        }
-        const targetDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date)
-            ? moment.tz(date, 'YYYY-MM-DD', 'Asia/Ho_Chi_Minh').startOf('day').toDate()
-            : moment().tz('Asia/Ho_Chi_Minh').startOf('day').toDate();
+// router.get('/results', authenticate, async (req, res) => {
+//     try {
+//         const { region, date } = req.query;
+//         if (!region || !['Nam', 'Trung', 'Bac'].includes(region)) {
+//             return res.status(400).json({ message: 'Miền không hợp lệ' });
+//         }
+//         const targetDate = date && /^\d{4}-\d{2}-\d{2}$/.test(date)
+//             ? moment.tz(date, 'YYYY-MM-DD', 'Asia/Ho_Chi_Minh').startOf('day').toDate()
+//             : moment().tz('Asia/Ho_Chi_Minh').startOf('day').toDate();
 
-        const modelMap = {
-            Bac: XSMB,
-            Nam: XSMN,
-            Trung: XSMT
-        };
+//         const modelMap = {
+//             Bac: XSMB,
+//             Nam: XSMN,
+//             Trung: XSMT
+//         };
 
-        const Model = modelMap[region];
-        if (!Model) {
-            return res.status(400).json({ message: `Không hỗ trợ kết quả cho miền ${region}` });
-        }
+//         const Model = modelMap[region];
+//         if (!Model) {
+//             return res.status(400).json({ message: `Không hỗ trợ kết quả cho miền ${region}` });
+//         }
 
-        const result = await Model.findOne({
-            drawDate: {
-                $gte: targetDate,
-                $lte: moment(targetDate).endOf('day').toDate()
-            }
-        }).lean();
+//         const result = await Model.findOne({
+//             drawDate: {
+//                 $gte: targetDate,
+//                 $lte: moment(targetDate).endOf('day').toDate()
+//             }
+//         }).lean();
 
-        if (!result) {
-            return res.status(404).json({ message: `Không tìm thấy kết quả xổ số cho miền ${region} ngày ${moment(targetDate).format('DD-MM-YYYY')}` });
-        }
+//         if (!result) {
+//             return res.status(404).json({ message: `Không tìm thấy kết quả xổ số cho miền ${region} ngày ${moment(targetDate).format('DD-MM-YYYY')}` });
+//         }
 
-        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-        res.status(200).json({
-            results: {
-                giaiDacBiet: result.specialPrize || [],
-                firstPrize: result.firstPrize || [],
-                secondPrize: result.secondPrize || [],
-                threePrizes: result.threePrizes || [],
-                fourPrizes: result.fourPrizes || [],
-                fivePrizes: result.fivePrizes || [],
-                sixPrizes: result.sixPrizes || [],
-                sevenPrizes: result.sevenPrizes || [],
-                drawDate: result.drawDate
-            }
-        });
-    } catch (err) {
-        console.error('Error in /lottery/results:', err.message);
-        res.status(500).json({ message: err.message || 'Đã có lỗi khi lấy kết quả xổ số' });
-    }
-});
+//         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+//         res.status(200).json({
+//             results: {
+//                 giaiDacBiet: result.specialPrize || [],
+//                 firstPrize: result.firstPrize || [],
+//                 secondPrize: result.secondPrize || [],
+//                 threePrizes: result.threePrizes || [],
+//                 fourPrizes: result.fourPrizes || [],
+//                 fivePrizes: result.fivePrizes || [],
+//                 sixPrizes: result.sixPrizes || [],
+//                 sevenPrizes: result.sevenPrizes || [],
+//                 drawDate: result.drawDate
+//             }
+//         });
+//     } catch (err) {
+//         console.error('Error in /lottery/results:', err.message);
+//         res.status(500).json({ message: err.message || 'Đã có lỗi khi lấy kết quả xổ số' });
+//     }
+// });
 
 router.post('/register', authenticate, async (req, res) => {
     try {
@@ -782,7 +841,72 @@ router.get('/check-results', authenticate, async (req, res) => {
         res.status(500).json({ message: err.message || 'Đã có lỗi khi lấy kết quả đối chiếu' });
     }
 });
+router.get('/public-registrations', async (req, res) => {
+    try {
+        const { region, eventId, page = 1, limit = 50, startDate, endDate } = req.query;
+        const query = {
+            isEvent: false,
+            isReward: false,
+        };
 
+        // Thêm bộ lọc theo region nếu có
+        if (region) {
+            if (!['Nam', 'Trung', 'Bac'].includes(region)) {
+                return res.status(400).json({ message: 'Miền không hợp lệ' });
+            }
+            query.region = region;
+        }
+
+        // Thêm bộ lọc theo eventId nếu có
+        if (eventId) {
+            try {
+                query.eventId = new mongoose.Types.ObjectId(eventId);
+            } catch (err) {
+                console.log('Invalid eventId:', eventId);
+                return res.status(400).json({ message: 'eventId không hợp lệ' });
+            }
+        }
+
+        // Thêm bộ lọc theo khoảng thời gian nếu có
+        if (startDate && endDate) {
+            try {
+                query.createdAt = {
+                    $gte: moment.tz(startDate, 'Asia/Ho_Chi_Minh').toDate(),
+                    $lte: moment.tz(endDate, 'Asia/Ho_Chi_Minh').endOf('day').toDate(),
+                };
+            } catch (err) {
+                console.log('Invalid date range:', { startDate, endDate });
+                return res.status(400).json({ message: 'Ngày không hợp lệ' });
+            }
+        } else {
+            // Mặc định lấy 10 ngày gần nhất
+            query.createdAt = {
+                $gte: moment().tz('Asia/Ho_Chi_Minh').subtract(10, 'days').startOf('day').toDate(),
+                $lte: moment().tz('Asia/Ho_Chi_Minh').endOf('day').toDate(),
+            };
+        }
+
+        console.log('Public registrations query:', { region, eventId, page, limit, startDate, endDate });
+
+        // Lấy danh sách đăng ký với dữ liệu hạn chế
+        const registrations = await LotteryRegistration.find(query)
+            .populate('userId', 'fullname img titles level points winCount') // Loại bỏ username, telegramId để bảo mật
+            .populate('eventId', 'title viewCount')
+            .sort({ createdAt: -1 })
+            .skip((page - 1) * Number(limit))
+            .limit(Number(limit))
+            .lean();
+
+        const total = await LotteryRegistration.countDocuments(query);
+        console.log('Public registrations fetched:', registrations.length, 'Total:', total);
+
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.status(200).json({ registrations, total, page: Number(page), limit: Number(limit) });
+    } catch (err) {
+        console.error('Error in /lottery/public-registrations:', err.message);
+        res.status(500).json({ message: err.message || 'Đã có lỗi khi lấy danh sách đăng ký công khai' });
+    }
+});
 cron.schedule('38 16 * * *', async () => {
     await checkLotteryResults('Nam', XSMN);
 });

@@ -11,7 +11,7 @@ const fs = require("fs");
 require("dotenv").config();
 const { initializeWebSocket } = require("./src/websocket");
 
-const telegramWebhookRouter = require("./src/routers/routestelegram");
+const telegramWebhookRouter = require("./src/routers/telegram/routestelegram");
 
 const app = express();
 const server = http.createServer(app);

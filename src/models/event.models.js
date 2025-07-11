@@ -1,26 +1,26 @@
+
 const mongoose = require('mongoose');
 const moment = require('moment-timezone');
 
-const eventSchema = new mongoose.Schema({
-    title: {
-        type: String,
+const commentSchema = new mongoose.Schema({
+    userId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
         required: true
     },
     content: {
         type: String,
         required: true
     },
-    type: {
-        type: String,
-        enum: ['event', 'hot_news'],
-        required: true
+    createdAt: {
+        type: Date,
+        default: () => moment.tz('Asia/Ho_Chi_Minh').toDate()
     },
-    createdBy: {
+    likes: [{
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
-    },
-    comments: [{
+        ref: 'User'
+    }],
+    replies: [{
         userId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
@@ -33,8 +33,34 @@ const eventSchema = new mongoose.Schema({
         createdAt: {
             type: Date,
             default: () => moment.tz('Asia/Ho_Chi_Minh').toDate()
-        }
-    }],
+        },
+        likes: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        }]
+    }]
+});
+
+const eventSchema = new mongoose.Schema({
+    title: {
+        type: String,
+        required: true
+    },
+    content: {
+        type: String,
+        required: true
+    },
+    type: {
+        type: String,
+        enum: ['event', 'hot_news', 'discussion'], // Thêm 'discussion'
+        required: true
+    },
+    createdBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    comments: [commentSchema],
     lotteryFields: {
         type: {
             bachThuLo: { type: Boolean, default: false },

@@ -72,7 +72,7 @@ const lotteryRegistrationSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['event', 'hot_news', 'USER_REWARDED', null],
+        enum: ['event', 'hot_news', 'discussion', 'USER_REWARDED', null],
         default: null
     }
 }, {

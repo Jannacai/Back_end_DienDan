@@ -149,7 +149,23 @@ router.get("/", authenticate, isAdmin, async (req, res) => {
         res.status(500).json({ error: "Không thể tải danh sách người dùng" });
     }
 });
-
+// Route mới cho UserList
+router.get("/list", async (req, res) => {
+    try {
+        const { search } = req.query;
+        const query = search ? { fullname: { $regex: search, $options: 'i' } } : {};
+        const users = await userModel
+            .find(query)
+            .select("fullname img role isOnline lastActive")
+            .sort({ isOnline: -1, fullname: 1 }); // Online lên trên, sắp xếp fullname theo thứ tự chữ cái
+        const total = await userModel.countDocuments(query);
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.status(200).json({ users, total });
+    } catch (error) {
+        console.error("Error in /users/list:", error.message);
+        res.status(500).json({ error: "Không thể tải danh sách người dùng cho UserList", details: error.message });
+    }
+});
 router.get("/:id", async (req, res) => {
     try {
         const { id } = req.params;
