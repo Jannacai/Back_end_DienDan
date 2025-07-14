@@ -25,7 +25,7 @@ const registerLimiter = rateLimit({
 // Rate limiting cho forgot-password
 const forgotPasswordLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 giờ
-    max: 3, // Tối đa 3 yêu cầu mỗi IP
+    max: 5, // Tối đa 5 yêu cầu mỗi IP
     message: "Quá nhiều yêu cầu gửi link đặt lại mật khẩu. Vui lòng thử lại sau 1 giờ.",
 });
 
@@ -36,16 +36,23 @@ const resetPasswordLimiter = rateLimit({
     message: "Quá nhiều yêu cầu đặt lại mật khẩu. Vui lòng thử lại sau 1 giờ.",
 });
 
+// Rate limiting cho send-verification-code
+const verificationCodeLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 giờ
+    max: 5, // Tối đa 5 yêu cầu mỗi IP
+    message: "Quá nhiều yêu cầu gửi mã xác thực. Vui lòng thử lại sau 1 giờ.",
+});
+
 // Kiểm tra biến môi trường
 let transporter;
-if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+if ("xsmb.win.contact@gmail.com" && "fgqc wehk ypfa ykkf") {
     transporter = nodemailer.createTransport({
         service: "gmail",
         pool: true,
         maxConnections: 5,
         auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
+            user: "xsmb.win.contact@gmail.com",
+            pass: "fgqc wehk ypfa ykkf",
         },
     });
 
@@ -118,11 +125,18 @@ const authenticate = (req, res, next) => {
         return res.status(401).json({ error: "Invalid token" });
     }
 };
+
 // Middleware kiểm tra CAPTCHA
 const verifyCaptcha = async (req, res, next) => {
     const captchaToken = req.headers["x-captcha-token"];
     if (!captchaToken) {
+        console.log("Missing CAPTCHA token for request:", req.body.email);
         return res.status(400).json({ error: "CAPTCHA token is required" });
+    }
+
+    if (!process.env.RECAPTCHA_SECRET_KEY) {
+        console.error("Missing RECAPTCHA_SECRET_KEY in environment variables");
+        return res.status(500).json({ error: "CAPTCHA service not configured" });
     }
 
     try {
@@ -132,13 +146,15 @@ const verifyCaptcha = async (req, res, next) => {
             body: `secret=${process.env.RECAPTCHA_SECRET_KEY}&response=${captchaToken}`,
         });
         const data = await response.json();
+        console.log(`CAPTCHA verification for ${req.body.email}: success=${data.success}, errors=${data['error-codes']?.join(', ')}`);
+
         if (!data.success) {
             return res.status(400).json({ error: "Invalid CAPTCHA" });
         }
         next();
     } catch (error) {
         console.error("CAPTCHA verification error:", error.message);
-        res.status(500).json({ error: "Failed to verify CAPTCHA" });
+        return res.status(400).json({ error: "Failed to verify CAPTCHA: " + error.message });
     }
 };
 
@@ -150,6 +166,7 @@ router.post("/send-verification-code", verificationCodeLimiter, verifyCaptcha, v
     const { email } = req.body;
 
     if (!transporter) {
+        console.error("Email service not configured for /send-verification-code");
         return res.status(500).json({ error: "Email service is not configured" });
     }
 
@@ -159,8 +176,8 @@ router.post("/send-verification-code", verificationCodeLimiter, verifyCaptcha, v
             return res.status(400).json({ error: "Email already exists" });
         }
 
-        const code = Math.floor(100000 + Math.random() * 900000).toString(); // Mã 6 chữ số
-        const expiresAt = Date.now() + 10 * 60 * 1000; // Hết hạn sau 10 phút
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = Date.now() + 10 * 60 * 1000;
 
         verificationCodes.set(email, { code, expiresAt });
         console.log(`Verification code for ${email}: ${code}`);
@@ -201,9 +218,10 @@ router.post("/verify-code", async (req, res) => {
         return res.status(400).json({ error: "Invalid verification code" });
     }
 
-    verificationCodes.delete(email); // Xóa mã sau khi xác thực thành công
+    verificationCodes.delete(email);
     res.status(200).json({ message: "Verification successful" });
 });
+
 // GET: Lấy thông tin người dùng
 router.get("/me", authenticate, async (req, res) => {
     try {
@@ -332,10 +350,11 @@ router.post("/login", loginLimiter, validateRegisterInput, async (req, res) => {
 });
 
 // POST: Quên mật khẩu
-router.post("/forgot-password", forgotPasswordLimiter, validateEmailInput, async (req, res) => {
+router.post("/forgot-password", forgotPasswordLimiter, verifyCaptcha, validateEmailInput, async (req, res) => {
     const { email } = req.body;
 
     if (!transporter) {
+        console.error("Email service not configured for /forgot-password");
         return res.status(500).json({ error: "Email service is not configured" });
     }
 
@@ -348,20 +367,26 @@ router.post("/forgot-password", forgotPasswordLimiter, validateEmailInput, async
         const resetToken = jwt.sign(
             { userId: user._id },
             process.env.JWT_SECRET,
-            { expiresIn: "1h" }
+            { expiresIn: "2h" }
         );
 
         const resetLink = `${process.env.FRONTEND_URL}/resetauth/reset-password?token=${resetToken}`;
         await transporter.sendMail({
-            from: process.env.EMAIL_USER,
+            from: "xsmb.win.contact@gmail.com",
             to: email,
             subject: "Đặt lại mật khẩu",
-            html: `<p>Nhấn vào liên kết sau để đặt lại mật khẩu:</p><a href="${resetLink}">Đặt lại mật khẩu</a><p>Link có hiệu lực trong 1 giờ.</p>`,
+            html: `<p>Nhấn vào liên kết sau để đặt lại mật khẩu:</p><a href="${resetLink}">Đặt lại mật khẩu</a><p>Link có hiệu lực trong 2 giờ.</p>`,
+        }).catch(error => {
+            console.error("Failed to send reset password email:", error.message);
+            throw new Error("Failed to send reset password email");
         });
 
         res.status(200).json({ message: "Link đặt lại mật khẩu đã được gửi tới email của bạn" });
     } catch (error) {
         console.error("Error in /forgot-password:", error.message);
+        if (error.message === "Failed to send reset password email") {
+            return res.status(500).json({ error: "Failed to send reset password email" });
+        }
         res.status(500).json({ error: "Không thể gửi email đặt lại mật khẩu. Vui lòng thử lại sau." });
     }
 });
