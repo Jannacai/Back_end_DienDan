@@ -41,7 +41,7 @@ let transporter;
 if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     transporter = nodemailer.createTransport({
         service: "gmail",
-        pool: true, // Sử dụng connection pool
+        pool: true,
         maxConnections: 5,
         auth: {
             user: process.env.EMAIL_USER,
@@ -75,6 +75,21 @@ const validateRegisterInput = (req, res, next) => {
     next();
 };
 
+// Middleware để validate email
+const validateEmailInput = (req, res, next) => {
+    const { email } = req.body;
+    if (!email) {
+        return res.status(400).json({ error: "Email is required" });
+    }
+    if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
+        return res.status(400).json({ error: "Invalid email format" });
+    }
+    if (email.length > 254) {
+        return res.status(400).json({ error: "Email is too long" });
+    }
+    next();
+};
+
 // Middleware xác thực token
 const authenticate = (req, res, next) => {
     const authHeader = req.headers.authorization;
@@ -89,7 +104,6 @@ const authenticate = (req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        console.log('Decoded JWT:', decoded); // Debug token
         if (!decoded.userId && !decoded._id) {
             return res.status(401).json({ error: "Token không chứa ID người dùng" });
         }
@@ -192,7 +206,7 @@ router.post("/login", loginLimiter, validateRegisterInput, async (req, res) => {
         if (!isMatch) {
             user.failedLoginAttempts += 1;
             if (user.failedLoginAttempts >= 5) {
-                user.lockUntil = new Date(Date.now() + 15 * 60 * 1000); // Khóa 15 phút
+                user.lockUntil = new Date(Date.now() + 15 * 60 * 1000);
                 user.failedLoginAttempts = 0;
             }
             await user.save();
@@ -233,12 +247,8 @@ router.post("/login", loginLimiter, validateRegisterInput, async (req, res) => {
 });
 
 // POST: Quên mật khẩu
-router.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
+router.post("/forgot-password", forgotPasswordLimiter, validateEmailInput, async (req, res) => {
     const { email } = req.body;
-
-    if (!email) {
-        return res.status(400).json({ error: "Email is required" });
-    }
 
     if (!transporter) {
         return res.status(500).json({ error: "Email service is not configured" });
@@ -256,12 +266,12 @@ router.post("/forgot-password", forgotPasswordLimiter, async (req, res) => {
             { expiresIn: "1h" }
         );
 
-        const resetLink = `${process.env.FRONTEND_URL}/reset-password`;
+        const resetLink = `${process.env.FRONTEND_URL}/resetauth/reset-password?token=${resetToken}`;
         await transporter.sendMail({
             from: process.env.EMAIL_USER,
             to: email,
             subject: "Đặt lại mật khẩu",
-            html: `<p>Nhấn vào liên kết sau và nhập mã: ${resetToken}</p><a href="${resetLink}">Đặt lại mật khẩu</a><p>Mã có hiệu lực trong 1 giờ.</p>`,
+            html: `<p>Nhấn vào liên kết sau để đặt lại mật khẩu:</p><a href="${resetLink}">Đặt lại mật khẩu</a><p>Link có hiệu lực trong 1 giờ.</p>`,
         });
 
         res.status(200).json({ message: "Link đặt lại mật khẩu đã được gửi tới email của bạn" });

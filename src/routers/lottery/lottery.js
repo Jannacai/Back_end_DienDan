@@ -9,8 +9,10 @@ const userModel = require('../../models/users.models');
 const LotteryRegistration = require('../../models/lottery.models');
 // const XSMB = require('../../models/XS_MB.models');
 // const XSMN = require('../../models/XS_MN.models');
-// const XSMT = require('../../models/XS_MT.models');
-const Event = require('../../models/event.models');
+// const XSMT = require('../../models/XS_MT.models')sssdsd;
+
+
+const Event = require('../../models/event.models'); //này
 const Notification = require('../../models/notification.models'); // Thêm model Notification
 const { broadcastComment } = require('../../websocket.js');
 const cron = require('node-cron');
