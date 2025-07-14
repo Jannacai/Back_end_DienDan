@@ -25,7 +25,7 @@ const registerLimiter = rateLimit({
 // Rate limiting cho forgot-password
 const forgotPasswordLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 giờ
-    max: 5, // Tối đa 5 yêu cầu mỗi IP
+    max: 3, // Tối đa 3 yêu cầu mỗi IP
     message: "Quá nhiều yêu cầu gửi link đặt lại mật khẩu. Vui lòng thử lại sau 1 giờ.",
 });
 
@@ -36,23 +36,16 @@ const resetPasswordLimiter = rateLimit({
     message: "Quá nhiều yêu cầu đặt lại mật khẩu. Vui lòng thử lại sau 1 giờ.",
 });
 
-// Rate limiting cho send-verification-code
-const verificationCodeLimiter = rateLimit({
-    windowMs: 1 * 60 * 1000, // 1 phút
-    max: 5, // Tối đa 5 yêu cầu mỗi IP
-    message: "Quá nhiều yêu cầu gửi mã xác thực. Vui lòng thử lại sau 1 giờ.",
-});
-
 // Kiểm tra biến môi trường
 let transporter;
-if ("xsmb.win.contact@gmail.com" && "fgqc wehk ypfa ykkf") {
+if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     transporter = nodemailer.createTransport({
         service: "gmail",
         pool: true,
         maxConnections: 5,
         auth: {
-            user: "xsmb.win.contact@gmail.com",
-            pass: "fgqc wehk ypfa ykkf",
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
         },
     });
 
@@ -125,7 +118,6 @@ const authenticate = (req, res, next) => {
         return res.status(401).json({ error: "Invalid token" });
     }
 };
-
 // Middleware kiểm tra CAPTCHA
 const verifyCaptcha = async (req, res, next) => {
     const captchaToken = req.headers["x-captcha-token"];
@@ -212,7 +204,6 @@ router.post("/verify-code", async (req, res) => {
     verificationCodes.delete(email); // Xóa mã sau khi xác thực thành công
     res.status(200).json({ message: "Verification successful" });
 });
-
 // GET: Lấy thông tin người dùng
 router.get("/me", authenticate, async (req, res) => {
     try {
@@ -341,7 +332,7 @@ router.post("/login", loginLimiter, validateRegisterInput, async (req, res) => {
 });
 
 // POST: Quên mật khẩu
-router.post("/forgot-password", forgotPasswordLimiter, verifyCaptcha, validateEmailInput, async (req, res) => {
+router.post("/forgot-password", forgotPasswordLimiter, validateEmailInput, async (req, res) => {
     const { email } = req.body;
 
     if (!transporter) {
@@ -357,15 +348,15 @@ router.post("/forgot-password", forgotPasswordLimiter, verifyCaptcha, validateEm
         const resetToken = jwt.sign(
             { userId: user._id },
             process.env.JWT_SECRET,
-            { expiresIn: "2h" }
+            { expiresIn: "1h" }
         );
 
         const resetLink = `${process.env.FRONTEND_URL}/resetauth/reset-password?token=${resetToken}`;
         await transporter.sendMail({
-            from: "xsmb.win.contact@gmail.com",
+            from: process.env.EMAIL_USER,
             to: email,
             subject: "Đặt lại mật khẩu",
-            html: `<p>Nhấn vào liên kết sau để đặt lại mật khẩu:</p><a href="${resetLink}">Đặt lại mật khẩu</a><p>Link có hiệu lực trong 2 giờ.</p>`,
+            html: `<p>Nhấn vào liên kết sau để đặt lại mật khẩu:</p><a href="${resetLink}">Đặt lại mật khẩu</a><p>Link có hiệu lực trong 1 giờ.</p>`,
         });
 
         res.status(200).json({ message: "Link đặt lại mật khẩu đã được gửi tới email của bạn" });
