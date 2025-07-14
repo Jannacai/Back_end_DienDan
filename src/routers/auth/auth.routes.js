@@ -7,6 +7,7 @@ const bcrypt = require("bcryptjs");
 const userModel = require("../../models/users.models");
 const nodemailer = require("nodemailer");
 const rateLimit = require("express-rate-limit");
+const axios = require("axios");
 
 // Rate limiting cho login
 const loginLimiter = rateLimit({
@@ -67,9 +68,40 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     console.error("Missing EMAIL_USER or EMAIL_PASS in environment variables. Email functionality will be disabled.");
 }
 
+// Middleware để validate CAPTCHA
+const validateCaptcha = async (req, res, next) => {
+    const captchaToken = req.headers["x-captcha-token"];
+    if (!captchaToken) {
+        console.log(`CAPTCHA validation failed: Missing CAPTCHA token`);
+        return res.status(400).json({ error: "CAPTCHA token is required" });
+    }
+
+    try {
+        const response = await axios.post(
+            `https://www.google.com/recaptcha/api/siteverify`,
+            null,
+            {
+                params: {
+                    secret: process.env.RECAPTCHA_SECRET_KEY,
+                    response: captchaToken,
+                },
+            }
+        );
+
+        if (!response.data.success) {
+            console.log(`CAPTCHA validation failed: Invalid CAPTCHA token`);
+            return res.status(400).json({ error: "Invalid CAPTCHA token" });
+        }
+        next();
+    } catch (error) {
+        console.error(`CAPTCHA validation error: ${error.message}`);
+        return res.status(500).json({ error: "Failed to validate CAPTCHA" });
+    }
+};
+
 // Middleware để validate dữ liệu
 const validateRegisterInput = (req, res, next) => {
-    const { username, password, email, fullname, verificationCode } = req.body;
+    const { username, password, email, fullname } = req.body;
     if (req.path === "/login") {
         if (!username || !password) {
             console.log(`Login validation failed: Missing username or password`);
@@ -84,9 +116,9 @@ const validateRegisterInput = (req, res, next) => {
             return res.status(400).json({ error: "Password must be at least 6 characters long" });
         }
     } else {
-        if (!username || !password || !email || !fullname || !verificationCode) {
-            console.log(`Register validation failed: Missing fields - username: ${!!username}, email: ${!!email}, fullname: ${!!fullname}, password: ${!!password}, verificationCode: ${!!verificationCode}`);
-            return res.status(400).json({ error: "Username, password, email, fullname, and verification code are required" });
+        if (!username || !password || !email || !fullname) {
+            console.log(`Register validation failed: Missing fields - username: ${!!username}, email: ${!!email}, fullname: ${!!fullname}, password: ${!!password}`);
+            return res.status(400).json({ error: "Username, password, email, and fullname are required" });
         }
         if (username.length < 3) {
             console.log(`Register validation failed: Username too short (${username})`);
@@ -158,7 +190,7 @@ const authenticate = (req, res, next) => {
 const verificationCodes = new Map();
 
 // POST: Gửi mã xác thực email
-router.post("/send-verification-code", verificationCodeLimiter, validateEmailInput, async (req, res) => {
+router.post("/send-verification-code", verificationCodeLimiter, validateEmailInput, validateCaptcha, async (req, res) => {
     const { email } = req.body;
 
     if (!transporter) {
@@ -260,22 +292,13 @@ router.get("/", async (req, res) => {
 
 // POST: Đăng ký người dùng
 router.post("/register", registerLimiter, validateRegisterInput, async (req, res) => {
-    const { username, email, fullname, password, verificationCode } = req.body;
+    const { username, email, fullname, password } = req.body;
     const deviceInfo = req.headers["user-agent"] || "unknown";
 
     try {
         console.log(`Register attempt for username: ${username}, email: ${email}`);
-        // Kiểm tra mã xác thực
-        const stored = verificationCodes.get(email);
-        if (!stored || stored.code !== verificationCode || stored.expiresAt < Date.now()) {
-            verificationCodes.delete(email);
-            console.log(`Register failed: Invalid or expired verification code for ${email}`);
-            return res.status(400).json({ error: "Invalid or expired verification code" });
-        }
-
         const existingUser = await userModel.findOne({ $or: [{ username }, { email }] });
         if (existingUser) {
-            verificationCodes.delete(email);
             console.log(`Register failed: ${existingUser.username === username ? "Username" : "Email"} already exists (${username}, ${email})`);
             return res.status(400).json({ error: existingUser.username === username ? "Username already exists" : "Email already exists" });
         }
@@ -300,9 +323,7 @@ router.post("/register", registerLimiter, validateRegisterInput, async (req, res
         }];
         await user.save();
 
-        verificationCodes.delete(email); // Xóa mã sau khi đăng ký thành công
         console.log(`Register successful for username: ${username}, email: ${email}`);
-
         res.status(201).json({
             message: "User registered successfully",
             accessToken,
