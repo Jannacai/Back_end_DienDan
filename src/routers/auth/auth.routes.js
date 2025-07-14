@@ -25,7 +25,7 @@ const registerLimiter = rateLimit({
 // Rate limiting cho forgot-password
 const forgotPasswordLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 giờ
-    max: 5, // Tối đa 5 yêu cầu mỗi IP
+    max: 3, // Tối đa 3 yêu cầu mỗi IP
     message: "Quá nhiều yêu cầu gửi link đặt lại mật khẩu. Vui lòng thử lại sau 1 giờ.",
 });
 
@@ -39,20 +39,20 @@ const resetPasswordLimiter = rateLimit({
 // Rate limiting cho send-verification-code
 const verificationCodeLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 giờ
-    max: 5, // Tối đa 5 yêu cầu mỗi IP
+    max: 3, // Tối đa 3 yêu cầu mỗi IP
     message: "Quá nhiều yêu cầu gửi mã xác thực. Vui lòng thử lại sau 1 giờ.",
 });
 
 // Kiểm tra biến môi trường
 let transporter;
-if ("xsmb.win.contact@gmail.com" && "fgqc wehk ypfa ykkf") {
+if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     transporter = nodemailer.createTransport({
         service: "gmail",
         pool: true,
         maxConnections: 5,
         auth: {
-            user: "xsmb.win.contact@gmail.com",
-            pass: "fgqc wehk ypfa ykkf",
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
         },
     });
 
@@ -67,17 +67,20 @@ if ("xsmb.win.contact@gmail.com" && "fgqc wehk ypfa ykkf") {
     console.error("Missing EMAIL_USER or EMAIL_PASS in environment variables. Email functionality will be disabled.");
 }
 
-// Middleware để validate dữ liệu
+// Middleware để validate dữ liệu đăng ký
 const validateRegisterInput = (req, res, next) => {
-    const { username, password } = req.body;
-    if (!username || !password) {
-        return res.status(400).json({ error: "Username and password are required" });
+    const { username, password, email, fullname } = req.body;
+    if (!username || !password || !email || !fullname) {
+        return res.status(400).json({ error: "Username, password, email, and fullname are required" });
     }
     if (username.length < 3) {
         return res.status(400).json({ error: "Username must be at least 3 characters long" });
     }
     if (password.length < 6) {
         return res.status(400).json({ error: "Password must be at least 6 characters long" });
+    }
+    if (fullname.length < 3) {
+        return res.status(400).json({ error: "Fullname must be at least 3 characters long" });
     }
     next();
 };
@@ -126,43 +129,11 @@ const authenticate = (req, res, next) => {
     }
 };
 
-// Middleware kiểm tra CAPTCHA
-const verifyCaptcha = async (req, res, next) => {
-    const captchaToken = req.headers["x-captcha-token"];
-    if (!captchaToken) {
-        console.log("Missing CAPTCHA token for request:", req.body.email);
-        return res.status(400).json({ error: "CAPTCHA token is required" });
-    }
-
-    if (!process.env.RECAPTCHA_SECRET_KEY) {
-        console.error("Missing RECAPTCHA_SECRET_KEY in environment variables");
-        return res.status(500).json({ error: "CAPTCHA service not configured" });
-    }
-
-    try {
-        const response = await fetch(`https://www.google.com/recaptcha/api/siteverify`, {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: `secret=${process.env.RECAPTCHA_SECRET_KEY}&response=${captchaToken}`,
-        });
-        const data = await response.json();
-        console.log(`CAPTCHA verification for ${req.body.email}: success=${data.success}, errors=${data['error-codes']?.join(', ')}`);
-
-        if (!data.success) {
-            return res.status(400).json({ error: "Invalid CAPTCHA" });
-        }
-        next();
-    } catch (error) {
-        console.error("CAPTCHA verification error:", error.message);
-        return res.status(400).json({ error: "Failed to verify CAPTCHA: " + error.message });
-    }
-};
-
 // In-memory store cho mã xác thực (thay bằng Redis trong production)
 const verificationCodes = new Map();
 
 // POST: Gửi mã xác thực email
-router.post("/send-verification-code", verificationCodeLimiter, verifyCaptcha, validateEmailInput, async (req, res) => {
+router.post("/send-verification-code", verificationCodeLimiter, validateEmailInput, async (req, res) => {
     const { email } = req.body;
 
     if (!transporter) {
@@ -176,22 +147,28 @@ router.post("/send-verification-code", verificationCodeLimiter, verifyCaptcha, v
             return res.status(400).json({ error: "Email already exists" });
         }
 
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
-        const expiresAt = Date.now() + 10 * 60 * 1000;
+        const code = Math.floor(100000 + Math.random() * 900000).toString(); // Mã 6 chữ số
+        const expiresAt = Date.now() + 10 * 60 * 1000; // Hết hạn sau 10 phút
 
         verificationCodes.set(email, { code, expiresAt });
         console.log(`Verification code for ${email}: ${code}`);
 
         await transporter.sendMail({
-            from: "xsmb.win.contact@gmail.com",
+            from: process.env.EMAIL_USER,
             to: email,
             subject: "Mã xác thực đăng ký",
             html: `<p>Mã xác thực của bạn là: <strong>${code}</strong></p><p>Mã có hiệu lực trong 10 phút.</p>`,
+        }).catch(error => {
+            console.error("Failed to send verification email:", error.message);
+            throw new Error("Failed to send verification email");
         });
 
         res.status(200).json({ message: "Mã xác thực đã được gửi tới email của bạn" });
     } catch (error) {
         console.error("Error in /send-verification-code:", error.message);
+        if (error.message === "Failed to send verification email") {
+            return res.status(500).json({ error: "Failed to send verification email" });
+        }
         res.status(500).json({ error: "Không thể gửi mã xác thực. Vui lòng thử lại sau." });
     }
 });
@@ -218,7 +195,7 @@ router.post("/verify-code", async (req, res) => {
         return res.status(400).json({ error: "Invalid verification code" });
     }
 
-    verificationCodes.delete(email);
+    verificationCodes.delete(email); // Xóa mã sau khi xác thực thành công
     res.status(200).json({ message: "Verification successful" });
 });
 
@@ -249,12 +226,20 @@ router.get("/", async (req, res) => {
 
 // POST: Đăng ký người dùng
 router.post("/register", registerLimiter, validateRegisterInput, async (req, res) => {
-    const { username, email, fullname, password } = req.body;
+    const { username, email, fullname, password, verificationCode } = req.body;
     const deviceInfo = req.headers["user-agent"] || "unknown";
 
     try {
+        // Kiểm tra mã xác thực
+        const stored = verificationCodes.get(email);
+        if (!stored || stored.code !== verificationCode || stored.expiresAt < Date.now()) {
+            verificationCodes.delete(email);
+            return res.status(400).json({ error: "Invalid or expired verification code" });
+        }
+
         const existingUser = await userModel.findOne({ $or: [{ username }, { email }] });
         if (existingUser) {
+            verificationCodes.delete(email);
             return res.status(400).json({ error: existingUser.username === username ? "Username already exists" : "Email already exists" });
         }
 
@@ -277,6 +262,8 @@ router.post("/register", registerLimiter, validateRegisterInput, async (req, res
             expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         }];
         await user.save();
+
+        verificationCodes.delete(email); // Xóa mã sau khi đăng ký thành công
 
         res.status(201).json({
             message: "User registered successfully",
@@ -350,7 +337,7 @@ router.post("/login", loginLimiter, validateRegisterInput, async (req, res) => {
 });
 
 // POST: Quên mật khẩu
-router.post("/forgot-password", forgotPasswordLimiter, verifyCaptcha, validateEmailInput, async (req, res) => {
+router.post("/forgot-password", forgotPasswordLimiter, validateEmailInput, async (req, res) => {
     const { email } = req.body;
 
     if (!transporter) {
@@ -367,15 +354,15 @@ router.post("/forgot-password", forgotPasswordLimiter, verifyCaptcha, validateEm
         const resetToken = jwt.sign(
             { userId: user._id },
             process.env.JWT_SECRET,
-            { expiresIn: "2h" }
+            { expiresIn: "1h" }
         );
 
         const resetLink = `${process.env.FRONTEND_URL}/resetauth/reset-password?token=${resetToken}`;
         await transporter.sendMail({
-            from: "xsmb.win.contact@gmail.com",
+            from: process.env.EMAIL_USER,
             to: email,
             subject: "Đặt lại mật khẩu",
-            html: `<p>Nhấn vào liên kết sau để đặt lại mật khẩu:</p><a href="${resetLink}">Đặt lại mật khẩu</a><p>Link có hiệu lực trong 2 giờ.</p>`,
+            html: `<p>Nhấn vào liên kết sau để đặt lại mật khẩu:</p><a href="${resetLink}">Đặt lại mật khẩu</a><p>Link có hiệu lực trong 1 giờ.</p>`,
         }).catch(error => {
             console.error("Failed to send reset password email:", error.message);
             throw new Error("Failed to send reset password email");
