@@ -25,7 +25,7 @@ const registerLimiter = rateLimit({
 // Rate limiting cho forgot-password
 const forgotPasswordLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 giờ
-    max: 3, // Tối đa 3 yêu cầu mỗi IP
+    max: 5, // Tối đa 5 yêu cầu mỗi IP
     message: "Quá nhiều yêu cầu gửi link đặt lại mật khẩu. Vui lòng thử lại sau 1 giờ.",
 });
 
@@ -36,16 +36,23 @@ const resetPasswordLimiter = rateLimit({
     message: "Quá nhiều yêu cầu đặt lại mật khẩu. Vui lòng thử lại sau 1 giờ.",
 });
 
+// Rate limiting cho send-verification-code
+const verificationCodeLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 phút
+    max: 5, // Tối đa 5 yêu cầu mỗi IP
+    message: "Quá nhiều yêu cầu gửi mã xác thực. Vui lòng thử lại sau 1 giờ.",
+});
+
 // Kiểm tra biến môi trường
 let transporter;
-if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+if ("xsmb.win.contact@gmail.com" && "fgqc wehk ypfa ykkf") {
     transporter = nodemailer.createTransport({
         service: "gmail",
         pool: true,
         maxConnections: 5,
         auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
+            user: "xsmb.win.contact@gmail.com",
+            pass: "fgqc wehk ypfa ykkf",
         },
     });
 
@@ -118,6 +125,93 @@ const authenticate = (req, res, next) => {
         return res.status(401).json({ error: "Invalid token" });
     }
 };
+
+// Middleware kiểm tra CAPTCHA
+const verifyCaptcha = async (req, res, next) => {
+    const captchaToken = req.headers["x-captcha-token"];
+    if (!captchaToken) {
+        return res.status(400).json({ error: "CAPTCHA token is required" });
+    }
+
+    try {
+        const response = await fetch(`https://www.google.com/recaptcha/api/siteverify`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `secret=${process.env.RECAPTCHA_SECRET_KEY}&response=${captchaToken}`,
+        });
+        const data = await response.json();
+        if (!data.success) {
+            return res.status(400).json({ error: "Invalid CAPTCHA" });
+        }
+        next();
+    } catch (error) {
+        console.error("CAPTCHA verification error:", error.message);
+        res.status(500).json({ error: "Failed to verify CAPTCHA" });
+    }
+};
+
+// In-memory store cho mã xác thực (thay bằng Redis trong production)
+const verificationCodes = new Map();
+
+// POST: Gửi mã xác thực email
+router.post("/send-verification-code", verificationCodeLimiter, verifyCaptcha, validateEmailInput, async (req, res) => {
+    const { email } = req.body;
+
+    if (!transporter) {
+        return res.status(500).json({ error: "Email service is not configured" });
+    }
+
+    try {
+        const existingUser = await userModel.findOne({ email });
+        if (existingUser) {
+            return res.status(400).json({ error: "Email already exists" });
+        }
+
+        const code = Math.floor(100000 + Math.random() * 900000).toString(); // Mã 6 chữ số
+        const expiresAt = Date.now() + 10 * 60 * 1000; // Hết hạn sau 10 phút
+
+        verificationCodes.set(email, { code, expiresAt });
+        console.log(`Verification code for ${email}: ${code}`);
+
+        await transporter.sendMail({
+            from: "xsmb.win.contact@gmail.com",
+            to: email,
+            subject: "Mã xác thực đăng ký",
+            html: `<p>Mã xác thực của bạn là: <strong>${code}</strong></p><p>Mã có hiệu lực trong 10 phút.</p>`,
+        });
+
+        res.status(200).json({ message: "Mã xác thực đã được gửi tới email của bạn" });
+    } catch (error) {
+        console.error("Error in /send-verification-code:", error.message);
+        res.status(500).json({ error: "Không thể gửi mã xác thực. Vui lòng thử lại sau." });
+    }
+});
+
+// POST: Xác thực mã
+router.post("/verify-code", async (req, res) => {
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+        return res.status(400).json({ error: "Email and code are required" });
+    }
+
+    const stored = verificationCodes.get(email);
+    if (!stored) {
+        return res.status(400).json({ error: "No verification code found for this email" });
+    }
+
+    if (stored.expiresAt < Date.now()) {
+        verificationCodes.delete(email);
+        return res.status(400).json({ error: "Verification code has expired" });
+    }
+
+    if (stored.code !== code) {
+        return res.status(400).json({ error: "Invalid verification code" });
+    }
+
+    verificationCodes.delete(email); // Xóa mã sau khi xác thực thành công
+    res.status(200).json({ message: "Verification successful" });
+});
 
 // GET: Lấy thông tin người dùng
 router.get("/me", authenticate, async (req, res) => {
@@ -247,7 +341,7 @@ router.post("/login", loginLimiter, validateRegisterInput, async (req, res) => {
 });
 
 // POST: Quên mật khẩu
-router.post("/forgot-password", forgotPasswordLimiter, validateEmailInput, async (req, res) => {
+router.post("/forgot-password", forgotPasswordLimiter, verifyCaptcha, validateEmailInput, async (req, res) => {
     const { email } = req.body;
 
     if (!transporter) {
@@ -263,15 +357,15 @@ router.post("/forgot-password", forgotPasswordLimiter, validateEmailInput, async
         const resetToken = jwt.sign(
             { userId: user._id },
             process.env.JWT_SECRET,
-            { expiresIn: "1h" }
+            { expiresIn: "2h" }
         );
 
         const resetLink = `${process.env.FRONTEND_URL}/resetauth/reset-password?token=${resetToken}`;
         await transporter.sendMail({
-            from: process.env.EMAIL_USER,
+            from: "xsmb.win.contact@gmail.com",
             to: email,
             subject: "Đặt lại mật khẩu",
-            html: `<p>Nhấn vào liên kết sau để đặt lại mật khẩu:</p><a href="${resetLink}">Đặt lại mật khẩu</a><p>Link có hiệu lực trong 1 giờ.</p>`,
+            html: `<p>Nhấn vào liên kết sau để đặt lại mật khẩu:</p><a href="${resetLink}">Đặt lại mật khẩu</a><p>Link có hiệu lực trong 2 giờ.</p>`,
         });
 
         res.status(200).json({ message: "Link đặt lại mật khẩu đã được gửi tới email của bạn" });
