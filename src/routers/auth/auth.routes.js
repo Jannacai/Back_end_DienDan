@@ -67,32 +67,37 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     console.error("Missing EMAIL_USER or EMAIL_PASS in environment variables. Email functionality will be disabled.");
 }
 
-// Middleware để validate dữ liệu đăng ký
+// Middleware để validate dữ liệu
 const validateRegisterInput = (req, res, next) => {
-    const { username, password, email, fullname } = req.body;
-    // Chỉ yêu cầu username và password cho login
+    const { username, password, email, fullname, verificationCode } = req.body;
     if (req.path === "/login") {
         if (!username || !password) {
+            console.log(`Login validation failed: Missing username or password`);
             return res.status(400).json({ error: "Username and password are required" });
         }
         if (username.length < 3) {
+            console.log(`Login validation failed: Username too short (${username})`);
             return res.status(400).json({ error: "Username must be at least 3 characters long" });
         }
         if (password.length < 6) {
+            console.log(`Login validation failed: Password too short for username ${username}`);
             return res.status(400).json({ error: "Password must be at least 6 characters long" });
         }
     } else {
-        // Yêu cầu thêm email và fullname cho register
-        if (!username || !password || !email || !fullname) {
-            return res.status(400).json({ error: "Username, password, email, and fullname are required" });
+        if (!username || !password || !email || !fullname || !verificationCode) {
+            console.log(`Register validation failed: Missing fields - username: ${!!username}, email: ${!!email}, fullname: ${!!fullname}, password: ${!!password}, verificationCode: ${!!verificationCode}`);
+            return res.status(400).json({ error: "Username, password, email, fullname, and verification code are required" });
         }
         if (username.length < 3) {
+            console.log(`Register validation failed: Username too short (${username})`);
             return res.status(400).json({ error: "Username must be at least 3 characters long" });
         }
         if (password.length < 6) {
+            console.log(`Register validation failed: Password too short for username ${username}`);
             return res.status(400).json({ error: "Password must be at least 6 characters long" });
         }
         if (fullname.length < 3) {
+            console.log(`Register validation failed: Fullname too short (${fullname})`);
             return res.status(400).json({ error: "Fullname must be at least 3 characters long" });
         }
     }
@@ -103,12 +108,15 @@ const validateRegisterInput = (req, res, next) => {
 const validateEmailInput = (req, res, next) => {
     const { email } = req.body;
     if (!email) {
+        console.log(`Email validation failed: Email is missing`);
         return res.status(400).json({ error: "Email is required" });
     }
     if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) {
+        console.log(`Email validation failed: Invalid email format (${email})`);
         return res.status(400).json({ error: "Invalid email format" });
     }
     if (email.length > 254) {
+        console.log(`Email validation failed: Email too long (${email})`);
         return res.status(400).json({ error: "Email is too long" });
     }
     next();
@@ -118,17 +126,20 @@ const validateEmailInput = (req, res, next) => {
 const authenticate = (req, res, next) => {
     const authHeader = req.headers.authorization;
     if (!authHeader) {
+        console.log(`Authentication failed: Authorization header is missing`);
         return res.status(401).json({ error: "Authorization header is missing" });
     }
 
     const token = authHeader.split(" ")[1];
     if (!token) {
+        console.log(`Authentication failed: Token is missing`);
         return res.status(401).json({ error: "Token is missing" });
     }
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         if (!decoded.userId && !decoded._id) {
+            console.log(`Authentication failed: Token does not contain user ID`);
             return res.status(401).json({ error: "Token không chứa ID người dùng" });
         }
         req.user = {
@@ -138,7 +149,7 @@ const authenticate = (req, res, next) => {
         };
         next();
     } catch (error) {
-        console.error('Authentication error:', error.message);
+        console.error(`Authentication error: ${error.message}`);
         return res.status(401).json({ error: "Invalid token" });
     }
 };
@@ -156,8 +167,10 @@ router.post("/send-verification-code", verificationCodeLimiter, validateEmailInp
     }
 
     try {
+        console.log(`Sending verification code to email: ${email}`);
         const existingUser = await userModel.findOne({ email });
         if (existingUser) {
+            console.log(`Verification failed: Email already exists (${email})`);
             return res.status(400).json({ error: "Email already exists" });
         }
 
@@ -173,13 +186,14 @@ router.post("/send-verification-code", verificationCodeLimiter, validateEmailInp
             subject: "Mã xác thực đăng ký",
             html: `<p>Mã xác thực của bạn là: <strong>${code}</strong></p><p>Mã có hiệu lực trong 10 phút.</p>`,
         }).catch(error => {
-            console.error("Failed to send verification email:", error.message);
+            console.error(`Failed to send verification email to ${email}: ${error.message}`);
             throw new Error("Failed to send verification email");
         });
 
+        console.log(`Verification email sent successfully to ${email}`);
         res.status(200).json({ message: "Mã xác thực đã được gửi tới email của bạn" });
     } catch (error) {
-        console.error("Error in /send-verification-code:", error.message);
+        console.error(`Error in /send-verification-code for ${email}: ${error.message}`);
         if (error.message === "Failed to send verification email") {
             return res.status(500).json({ error: "Failed to send verification email" });
         }
@@ -192,24 +206,29 @@ router.post("/verify-code", async (req, res) => {
     const { email, code } = req.body;
 
     if (!email || !code) {
+        console.log(`Verify code failed: Missing email or code (email: ${email}, code: ${code})`);
         return res.status(400).json({ error: "Email and code are required" });
     }
 
     const stored = verificationCodes.get(email);
     if (!stored) {
+        console.log(`Verify code failed: No verification code found for ${email}`);
         return res.status(400).json({ error: "No verification code found for this email" });
     }
 
     if (stored.expiresAt < Date.now()) {
         verificationCodes.delete(email);
+        console.log(`Verify code failed: Verification code expired for ${email}`);
         return res.status(400).json({ error: "Verification code has expired" });
     }
 
     if (stored.code !== code) {
+        console.log(`Verify code failed: Invalid verification code for ${email}`);
         return res.status(400).json({ error: "Invalid verification code" });
     }
 
     verificationCodes.delete(email); // Xóa mã sau khi xác thực thành công
+    console.log(`Verification successful for ${email}`);
     res.status(200).json({ message: "Verification successful" });
 });
 
@@ -218,11 +237,12 @@ router.get("/me", authenticate, async (req, res) => {
     try {
         const user = await userModel.findById(req.user.id).select("-password -refreshTokens");
         if (!user) {
+            console.log(`User not found for ID: ${req.user.id}`);
             return res.status(404).json({ error: "User not found" });
         }
         res.status(200).json(user);
     } catch (error) {
-        console.error("Error in /me:", error.message);
+        console.error(`Error in /me: ${error.message}`);
         res.status(500).json({ error: "Internal Server Error" });
     }
 });
@@ -233,7 +253,7 @@ router.get("/", async (req, res) => {
         const results = await userModel.find().select("-password -refreshTokens");
         res.status(200).json(results);
     } catch (error) {
-        console.error("Error in /:", error.message);
+        console.error(`Error in /: ${error.message}`);
         res.status(500).json({ error: "Internal Server Error" });
     }
 });
@@ -244,16 +264,19 @@ router.post("/register", registerLimiter, validateRegisterInput, async (req, res
     const deviceInfo = req.headers["user-agent"] || "unknown";
 
     try {
+        console.log(`Register attempt for username: ${username}, email: ${email}`);
         // Kiểm tra mã xác thực
         const stored = verificationCodes.get(email);
         if (!stored || stored.code !== verificationCode || stored.expiresAt < Date.now()) {
             verificationCodes.delete(email);
+            console.log(`Register failed: Invalid or expired verification code for ${email}`);
             return res.status(400).json({ error: "Invalid or expired verification code" });
         }
 
         const existingUser = await userModel.findOne({ $or: [{ username }, { email }] });
         if (existingUser) {
             verificationCodes.delete(email);
+            console.log(`Register failed: ${existingUser.username === username ? "Username" : "Email"} already exists (${username}, ${email})`);
             return res.status(400).json({ error: existingUser.username === username ? "Username already exists" : "Email already exists" });
         }
 
@@ -278,6 +301,7 @@ router.post("/register", registerLimiter, validateRegisterInput, async (req, res
         await user.save();
 
         verificationCodes.delete(email); // Xóa mã sau khi đăng ký thành công
+        console.log(`Register successful for username: ${username}, email: ${email}`);
 
         res.status(201).json({
             message: "User registered successfully",
@@ -286,7 +310,7 @@ router.post("/register", registerLimiter, validateRegisterInput, async (req, res
             user: { id: user._id, username: user.username, email: user.email, role: user.role },
         });
     } catch (error) {
-        console.error("Error in /register:", error.message);
+        console.error(`Error in /register for ${username}, ${email}: ${error.message}`);
         res.status(500).json({ error: "Internal Server Error" });
     }
 });
@@ -300,12 +324,12 @@ router.post("/login", loginLimiter, validateRegisterInput, async (req, res) => {
         console.log(`Login attempt for username: ${username}`);
         const user = await userModel.findOne({ username });
         if (!user) {
-            console.log(`User not found: ${username}`);
+            console.log(`Login failed: Username not found (${username})`);
             return res.status(400).json({ error: "Username not found" });
         }
 
         if (user.lockUntil && user.lockUntil > new Date()) {
-            console.log(`Account locked for username: ${username}, until: ${user.lockUntil}`);
+            console.log(`Login failed: Account locked for username ${username}, until: ${user.lockUntil}`);
             return res.status(403).json({ error: "Tài khoản bị khóa. Vui lòng thử lại sau." });
         }
 
@@ -315,10 +339,10 @@ router.post("/login", loginLimiter, validateRegisterInput, async (req, res) => {
             if (user.failedLoginAttempts >= 5) {
                 user.lockUntil = new Date(Date.now() + 15 * 60 * 1000);
                 user.failedLoginAttempts = 0;
-                console.log(`Account locked for username: ${username} due to too many failed attempts`);
+                console.log(`Login failed: Account locked for username ${username} due to too many failed attempts`);
             }
             await user.save();
-            console.log(`Incorrect password for username: ${username}, attempts: ${user.failedLoginAttempts}`);
+            console.log(`Login failed: Incorrect password for username ${username}, attempts: ${user.failedLoginAttempts}`);
             return res.status(400).json({ error: "Incorrect password" });
         }
 
@@ -351,7 +375,7 @@ router.post("/login", loginLimiter, validateRegisterInput, async (req, res) => {
             user: { id: user._id, username: user.username, email: user.email, role: user.role },
         });
     } catch (error) {
-        console.error("Error in /login:", error.message);
+        console.error(`Error in /login for ${username}: ${error.message}`);
         res.status(500).json({ error: "Internal Server Error" });
     }
 });
@@ -368,6 +392,7 @@ router.post("/forgot-password", forgotPasswordLimiter, validateEmailInput, async
     try {
         const user = await userModel.findOne({ email });
         if (!user) {
+            console.log(`Forgot password failed: Email not found (${email})`);
             return res.status(400).json({ error: "Email not found" });
         }
 
@@ -384,13 +409,14 @@ router.post("/forgot-password", forgotPasswordLimiter, validateEmailInput, async
             subject: "Đặt lại mật khẩu",
             html: `<p>Nhấn vào liên kết sau để đặt lại mật khẩu:</p><a href="${resetLink}">Đặt lại mật khẩu</a><p>Link có hiệu lực trong 1 giờ.</p>`,
         }).catch(error => {
-            console.error("Failed to send reset password email:", error.message);
+            console.error(`Failed to send reset password email to ${email}: ${error.message}`);
             throw new Error("Failed to send reset password email");
         });
 
+        console.log(`Reset password email sent successfully to ${email}`);
         res.status(200).json({ message: "Link đặt lại mật khẩu đã được gửi tới email của bạn" });
     } catch (error) {
-        console.error("Error in /forgot-password:", error.message);
+        console.error(`Error in /forgot-password for ${email}: ${error.message}`);
         if (error.message === "Failed to send reset password email") {
             return res.status(500).json({ error: "Failed to send reset password email" });
         }
@@ -403,6 +429,7 @@ router.post("/reset-password", resetPasswordLimiter, async (req, res) => {
     const { token, newPassword } = req.body;
 
     if (!token) {
+        console.log(`Reset password failed: Token is missing`);
         return res.status(400).json({ error: "Token is required" });
     }
 
@@ -411,14 +438,17 @@ router.post("/reset-password", resetPasswordLimiter, async (req, res) => {
         const user = await userModel.findById(decoded.userId);
 
         if (!user) {
+            console.log(`Reset password failed: Invalid or expired token for user ID ${decoded.userId}`);
             return res.status(400).json({ error: "Invalid or expired token" });
         }
 
         if (!newPassword) {
+            console.log(`Reset password: Token is valid for user ID ${decoded.userId}`);
             return res.status(200).json({ message: "Token is valid" });
         }
 
         if (newPassword.length < 8) {
+            console.log(`Reset password failed: New password too short for user ID ${decoded.userId}`);
             return res.status(400).json({ error: "New password must be at least 8 characters long" });
         }
 
@@ -426,10 +456,12 @@ router.post("/reset-password", resetPasswordLimiter, async (req, res) => {
         user.refreshTokens = [];
         await user.save();
 
+        console.log(`Password reset successfully for user ID ${decoded.userId}`);
         res.status(200).json({ message: "Password reset successfully" });
     } catch (error) {
-        console.error("Error in /reset-password:", error.message);
+        console.error(`Error in /reset-password: ${error.message}`);
         if (error.name === "TokenExpiredError") {
+            console.log(`Reset password failed: Token expired`);
             return res.status(400).json({ error: "Token has expired" });
         }
         res.status(400).json({ error: "Invalid token" });
@@ -442,22 +474,26 @@ router.post("/refresh-token", async (req, res) => {
     const deviceInfo = req.headers["user-agent"] || "unknown";
 
     if (!refreshToken) {
+        console.log(`Refresh token failed: Refresh token is missing`);
         return res.status(400).json({ error: "Refresh token is required" });
     }
 
     try {
         const user = await userModel.findOne({ "refreshTokens.token": refreshToken });
         if (!user) {
+            console.log(`Refresh token failed: Invalid refresh token`);
             return res.status(403).json({ error: "Invalid refresh token" });
         }
 
         const tokenData = user.refreshTokens.find((t) => t.token === refreshToken);
         if (!tokenData || tokenData.expiresAt < new Date()) {
+            console.log(`Refresh token failed: Invalid or expired refresh token for user ID ${user._id}`);
             return res.status(403).json({ error: "Invalid or expired refresh token" });
         }
 
         const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
         if (decoded.userId !== user._id.toString()) {
+            console.log(`Refresh token failed: Invalid refresh token for user ID ${user._id}`);
             return res.status(403).json({ error: "Invalid refresh token" });
         }
 
@@ -480,10 +516,12 @@ router.post("/refresh-token", async (req, res) => {
         );
 
         await user.save();
+        console.log(`Refresh token successful for user ID ${user._id}`);
         res.status(200).json({ accessToken, newRefreshToken });
     } catch (error) {
-        console.error("Error in /refresh-token:", error.message);
+        console.error(`Error in /refresh-token: ${error.message}`);
         if (error.name === "TokenExpiredError") {
+            console.log(`Refresh token failed: Refresh token expired`);
             return res.status(403).json({ error: "Refresh token expired" });
         }
         res.status(403).json({ error: "Invalid refresh token" });
@@ -495,6 +533,7 @@ router.post("/logout", async (req, res) => {
     const { refreshToken } = req.body;
 
     if (!refreshToken) {
+        console.log(`Logout failed: Refresh token is missing`);
         return res.status(400).json({ error: "Refresh token is required" });
     }
 
@@ -503,10 +542,11 @@ router.post("/logout", async (req, res) => {
         if (user) {
             user.refreshTokens = user.refreshTokens.filter((t) => t.token !== refreshToken);
             await user.save();
+            console.log(`Logout successful for user ID ${user._id}`);
         }
         res.status(200).json({ message: "Logged out successfully" });
     } catch (error) {
-        console.error("Error in /logout:", error.message);
+        console.error(`Error in /logout: ${error.message}`);
         res.status(500).json({ error: "Internal Server Error" });
     }
 });
