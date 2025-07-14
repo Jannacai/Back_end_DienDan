@@ -70,17 +70,31 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
 // Middleware để validate dữ liệu đăng ký
 const validateRegisterInput = (req, res, next) => {
     const { username, password, email, fullname } = req.body;
-    if (!username || !password || !email || !fullname) {
-        return res.status(400).json({ error: "Username, password, email, and fullname are required" });
-    }
-    if (username.length < 3) {
-        return res.status(400).json({ error: "Username must be at least 3 characters long" });
-    }
-    if (password.length < 6) {
-        return res.status(400).json({ error: "Password must be at least 6 characters long" });
-    }
-    if (fullname.length < 3) {
-        return res.status(400).json({ error: "Fullname must be at least 3 characters long" });
+    // Chỉ yêu cầu username và password cho login
+    if (req.path === "/login") {
+        if (!username || !password) {
+            return res.status(400).json({ error: "Username and password are required" });
+        }
+        if (username.length < 3) {
+            return res.status(400).json({ error: "Username must be at least 3 characters long" });
+        }
+        if (password.length < 6) {
+            return res.status(400).json({ error: "Password must be at least 6 characters long" });
+        }
+    } else {
+        // Yêu cầu thêm email và fullname cho register
+        if (!username || !password || !email || !fullname) {
+            return res.status(400).json({ error: "Username, password, email, and fullname are required" });
+        }
+        if (username.length < 3) {
+            return res.status(400).json({ error: "Username must be at least 3 characters long" });
+        }
+        if (password.length < 6) {
+            return res.status(400).json({ error: "Password must be at least 6 characters long" });
+        }
+        if (fullname.length < 3) {
+            return res.status(400).json({ error: "Fullname must be at least 3 characters long" });
+        }
     }
     next();
 };
@@ -283,12 +297,15 @@ router.post("/login", loginLimiter, validateRegisterInput, async (req, res) => {
     const deviceInfo = req.headers["user-agent"] || "unknown";
 
     try {
+        console.log(`Login attempt for username: ${username}`);
         const user = await userModel.findOne({ username });
         if (!user) {
+            console.log(`User not found: ${username}`);
             return res.status(400).json({ error: "Username not found" });
         }
 
         if (user.lockUntil && user.lockUntil > new Date()) {
+            console.log(`Account locked for username: ${username}, until: ${user.lockUntil}`);
             return res.status(403).json({ error: "Tài khoản bị khóa. Vui lòng thử lại sau." });
         }
 
@@ -298,8 +315,10 @@ router.post("/login", loginLimiter, validateRegisterInput, async (req, res) => {
             if (user.failedLoginAttempts >= 5) {
                 user.lockUntil = new Date(Date.now() + 15 * 60 * 1000);
                 user.failedLoginAttempts = 0;
+                console.log(`Account locked for username: ${username} due to too many failed attempts`);
             }
             await user.save();
+            console.log(`Incorrect password for username: ${username}, attempts: ${user.failedLoginAttempts}`);
             return res.status(400).json({ error: "Incorrect password" });
         }
 
@@ -325,6 +344,7 @@ router.post("/login", loginLimiter, validateRegisterInput, async (req, res) => {
         });
         await user.save();
 
+        console.log(`Login successful for username: ${username}`);
         res.status(200).json({
             accessToken,
             refreshToken,
