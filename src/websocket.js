@@ -9,6 +9,18 @@ const moment = require('moment-timezone');
 let io = null;
 let guestCount = 0; // Biến đếm số khách online
 
+// Hàm phát số lượt xem tới tất cả client trong viewCountRoom
+async function broadcastViewCount() {
+    try {
+        const onlineUsers = await userModel.countDocuments({ isOnline: true });
+        const totalViews = onlineUsers + guestCount;
+        io.to('viewCountRoom').emit('VIEW_COUNT_UPDATED', { viewCount: totalViews });
+        console.log(`Broadcasted view count: ${totalViews}`);
+    } catch (err) {
+        console.error('Error broadcasting view count:', err.message);
+    }
+}
+
 function initializeWebSocket(server) {
     if (io) {
         console.warn("Socket.IO server already initialized");
@@ -42,21 +54,35 @@ function initializeWebSocket(server) {
                     lastActive: moment.tz('Asia/Ho_Chi_Minh').toDate(),
                 });
                 console.log(`User ${userId} is online with socket ${socket.id}`);
+                // Phát viewCount khi người dùng đăng nhập kết nối
+                broadcastViewCount();
             } else {
                 // Không có userId hợp lệ, coi là khách
                 guestCount++;
                 io.to('userStatus').emit('GUEST_COUNT_UPDATED', { guestCount });
                 console.log(`Guest connected, total guests: ${guestCount}`);
+                // Phát viewCount khi khách kết nối
+                broadcastViewCount();
             }
         } catch (err) {
             // Token không hợp lệ, coi là khách
             guestCount++;
             io.to('userStatus').emit('GUEST_COUNT_UPDATED', { guestCount });
             console.log(`Guest connected (invalid token), total guests: ${guestCount}`);
+            // Phát viewCount khi khách kết nối
+            broadcastViewCount();
         }
 
         socket.join("public");
         console.log(`Socket.IO client connected: Client ID: ${socket.id}`);
+
+        // Thêm sự kiện joinViewCount
+        socket.on("joinViewCount", () => {
+            socket.join("viewCountRoom");
+            console.log(`Client ${socket.id} joined viewCountRoom`);
+            // Gửi viewCount cho client mới tham gia
+            broadcastViewCount();
+        });
 
         // Kênh userStatus cho UserList
         socket.on("joinUserStatus", () => {
@@ -131,6 +157,8 @@ function initializeWebSocket(server) {
                     lastActive: moment.tz('Asia/Ho_Chi_Minh').toDate(),
                 });
                 console.log(`User ${userId} reconnected with socket ${socket.id}`);
+                // Phát viewCount khi người dùng tái kết nối
+                broadcastViewCount();
             }
         });
 
@@ -152,6 +180,8 @@ function initializeWebSocket(server) {
                             lastActive: moment.tz('Asia/Ho_Chi_Minh').toDate(),
                         });
                         console.log(`User ${userId} is offline after grace period`);
+                        // Phát viewCount khi người dùng offline
+                        broadcastViewCount();
                     }
                 }, 30000); // 30 giây grace period
             } else {
@@ -159,6 +189,8 @@ function initializeWebSocket(server) {
                 guestCount = Math.max(0, guestCount - 1);
                 io.to('userStatus').emit('GUEST_COUNT_UPDATED', { guestCount });
                 console.log(`Guest disconnected, total guests: ${guestCount}`);
+                // Phát viewCount khi khách ngắt kết nối
+                broadcastViewCount();
             }
             console.log(`Socket.IO client disconnected: ${socket.id}`);
         });
@@ -191,4 +223,4 @@ function broadcastComment({ type, data, room, postId, eventId }) {
     }
 }
 
-module.exports = { initializeWebSocket, broadcastComment, io };
+module.exports = { initializeWebSocket, broadcastComment, io, broadcastViewCount };

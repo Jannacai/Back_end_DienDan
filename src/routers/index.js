@@ -2,6 +2,8 @@
 const { router: authK } = require('./auth/auth.routes');
 const commentRoutes = require('./auth/comment.routes');
 const notificationRoutes = require('./auth/notification.routes');
+const ViewRoutes = require('./auth/viewRoutes');
+
 const groupchatRoutes = require('./auth/groupchat.routes');
 const userRoutes = require('./auth/user.routes');
 const lotteryRoutes = require('./lottery/lottery');
@@ -19,6 +21,7 @@ const Routes = (app) => {
     app.use('/api/comments', commentRoutes);
     app.use('/api/groupchat', groupchatRoutes);
     app.use('/api/auth', authK);
+    app.use('/api/views', ViewRoutes);
     app.use('/api/lottery', lotteryRoutes);
     app.use('/api/events', eventRouter);
 

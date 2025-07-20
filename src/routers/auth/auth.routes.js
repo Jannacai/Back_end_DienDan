@@ -291,7 +291,7 @@ router.get("/", async (req, res) => {
 });
 
 // POST: Đăng ký người dùng
-router.post("/register", registerLimiter, validateRegisterInput, async (req, res) => {
+router.post("/register", registerLimiter, validateRegisterInput, validateCaptcha, async (req, res) => {
     const { username, email, fullname, password } = req.body;
     const deviceInfo = req.headers["user-agent"] || "unknown";
 
