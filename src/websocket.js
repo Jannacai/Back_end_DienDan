@@ -35,43 +35,12 @@ function initializeWebSocket(server) {
     });
 
     io.on("connection", async (socket) => {
-        // Xác thực userId từ token
-        const token = socket.handshake.query.token;
-        let userId = null;
-        try {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
-            userId = decoded.userId || decoded.id;
-            if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-                // Cập nhật trạng thái online và socketId cho người dùng đăng nhập
-                await userModel.findByIdAndUpdate(userId, {
-                    isOnline: true,
-                    lastActive: moment.tz('Asia/Ho_Chi_Minh').toDate(),
-                    socketId: socket.id,
-                });
-                io.to('userStatus').emit('USER_STATUS_UPDATED', {
-                    _id: userId,
-                    isOnline: true,
-                    lastActive: moment.tz('Asia/Ho_Chi_Minh').toDate(),
-                });
-                console.log(`User ${userId} is online with socket ${socket.id}`);
-                // Phát viewCount khi người dùng đăng nhập kết nối
-                broadcastViewCount();
-            } else {
-                // Không có userId hợp lệ, coi là khách
-                guestCount++;
-                io.to('userStatus').emit('GUEST_COUNT_UPDATED', { guestCount });
-                console.log(`Guest connected, total guests: ${guestCount}`);
-                // Phát viewCount khi khách kết nối
-                broadcastViewCount();
-            }
-        } catch (err) {
-            // Token không hợp lệ, coi là khách
-            guestCount++;
-            io.to('userStatus').emit('GUEST_COUNT_UPDATED', { guestCount });
-            console.log(`Guest connected (invalid token), total guests: ${guestCount}`);
-            // Phát viewCount khi khách kết nối
-            broadcastViewCount();
-        }
+        // Không yêu cầu xác thực token, coi tất cả client là khách
+        guestCount++;
+        io.to('userStatus').emit('GUEST_COUNT_UPDATED', { guestCount });
+        console.log(`Guest connected, total guests: ${guestCount}`);
+        // Phát viewCount khi client kết nối
+        broadcastViewCount();
 
         socket.join("public");
         console.log(`Socket.IO client connected: Client ID: ${socket.id}`);
@@ -114,7 +83,9 @@ function initializeWebSocket(server) {
 
         socket.on("joinEventFeed", () => {
             socket.join("eventFeed");
-            console.log(`Client ${socket.id} joined eventFeed room`);
+            console.log(`Client ${socket.id} joined eventസ
+
+System: eventFeed room`);
         });
 
         socket.on("joinEvent", (eventId) => {
@@ -145,53 +116,18 @@ function initializeWebSocket(server) {
 
         // Xử lý tái kết nối
         socket.on("reconnect", async () => {
-            if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-                await userModel.findByIdAndUpdate(userId, {
-                    isOnline: true,
-                    lastActive: moment.tz('Asia/Ho_Chi_Minh').toDate(),
-                    socketId: socket.id,
-                });
-                io.to('userStatus').emit('USER_STATUS_UPDATED', {
-                    _id: userId,
-                    isOnline: true,
-                    lastActive: moment.tz('Asia/Ho_Chi_Minh').toDate(),
-                });
-                console.log(`User ${userId} reconnected with socket ${socket.id}`);
-                // Phát viewCount khi người dùng tái kết nối
-                broadcastViewCount();
-            }
+            // Bỏ logic cập nhật userModel, chỉ phát viewCount
+            broadcastViewCount();
+            console.log(`Client ${socket.id} reconnected`);
         });
 
         // Xử lý ngắt kết nối
         socket.on("disconnect", async () => {
-            if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-                // Đặt timeout 30 giây trước khi đánh dấu offline
-                setTimeout(async () => {
-                    const user = await userModel.findById(userId);
-                    if (user && user.socketId === socket.id) {
-                        await userModel.findByIdAndUpdate(userId, {
-                            isOnline: false,
-                            lastActive: moment.tz('Asia/Ho_Chi_Minh').toDate(),
-                            socketId: null,
-                        });
-                        io.to('userStatus').emit('USER_STATUS_UPDATED', {
-                            _id: userId,
-                            isOnline: false,
-                            lastActive: moment.tz('Asia/Ho_Chi_Minh').toDate(),
-                        });
-                        console.log(`User ${userId} is offline after grace period`);
-                        // Phát viewCount khi người dùng offline
-                        broadcastViewCount();
-                    }
-                }, 30000); // 30 giây grace period
-            } else {
-                // Khách ngắt kết nối
-                guestCount = Math.max(0, guestCount - 1);
-                io.to('userStatus').emit('GUEST_COUNT_UPDATED', { guestCount });
-                console.log(`Guest disconnected, total guests: ${guestCount}`);
-                // Phát viewCount khi khách ngắt kết nối
-                broadcastViewCount();
-            }
+            guestCount = Math.max(0, guestCount - 1);
+            io.to('userStatus').emit('GUEST_COUNT_UPDATED', { guestCount });
+            console.log(`Guest disconnected, total guests: ${guestCount}`);
+            // Phát viewCount khi client ngắt kết nối
+            broadcastViewCount();
             console.log(`Socket.IO client disconnected: ${socket.id}`);
         });
 

@@ -1,4 +1,3 @@
-
 const mongoose = require('mongoose');
 const moment = require('moment-timezone');
 
@@ -50,9 +49,13 @@ const eventSchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    label: {
+        type: String,
+        required: true
+    },
     type: {
         type: String,
-        enum: ['event', 'hot_news', 'discussion'], // Thêm 'discussion'
+        enum: ['event', 'hot_news', 'discussion'],
         required: true
     },
     createdBy: {
@@ -66,13 +69,21 @@ const eventSchema = new mongoose.Schema({
             bachThuLo: { type: Boolean, default: false },
             songThuLo: { type: Boolean, default: false },
             threeCL: { type: Boolean, default: false },
-            cham: { type: Boolean, default: false }
+            cham: { type: Boolean, default: false },
+            danDe: { type: Boolean, default: false },
+            danDeType: {
+                type: String,
+                default: null,
+                enum: [null, '1x', '2x', '3x', '4x', '5x', '6x']
+            }
         },
         default: {
             bachThuLo: false,
             songThuLo: false,
             threeCL: false,
-            cham: false
+            cham: false,
+            danDe: false,
+            danDeType: null
         }
     },
     viewCount: {

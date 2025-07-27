@@ -18,6 +18,9 @@ const isAdmin = (req, res, next) => {
     next();
 };
 
+// Danh sách các giá trị hợp lệ cho danDeType
+const validDanDeTypes = ['1x', '2x', '3x', '4x', '5x', '6x'];
+
 router.get('/', async (req, res) => {
     try {
         const { type, page = 1, limit = 20 } = req.query;
@@ -89,7 +92,7 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', authenticate, async (req, res, next) => {
     try {
-        const { title, content, type, lotteryFields, startTime, endTime, rules, rewards, scoringMethod, notes } = req.body;
+        const { title, content, label, type, lotteryFields, startTime, endTime, rules, rewards, scoringMethod, notes } = req.body;
 
         if (['event', 'hot_news'].includes(type) && (!req.user || req.user.role !== 'ADMIN')) {
             return res.status(403).json({ error: "Chỉ admin mới có quyền đăng sự kiện hoặc tin hot" });
@@ -98,28 +101,39 @@ router.post('/', authenticate, async (req, res, next) => {
         if (!['event', 'hot_news', 'discussion'].includes(type)) {
             return res.status(400).json({ message: 'Loại không hợp lệ' });
         }
-        if (!title || !content) {
-            return res.status(400).json({ message: 'Tiêu đề và nội dung là bắt buộc' });
+        if (!title || !content || !label) {
+            return res.status(400).json({ message: 'Tiêu đề, nội dung và nhãn là bắt buộc' });
+        }
+        if (type !== 'discussion' && !endTime) {
+            return res.status(400).json({ message: 'Thời gian kết thúc là bắt buộc cho sự kiện hoặc tin hot' });
         }
         if (type !== 'discussion' && startTime && endTime && moment(endTime).isBefore(startTime)) {
             return res.status(400).json({ message: 'Thời gian kết thúc phải sau thời gian bắt đầu' });
+        }
+        if (type === 'event' && lotteryFields?.danDe && !validDanDeTypes.includes(lotteryFields.danDeType)) {
+            return res.status(400).json({ message: 'Loại dàn đề không hợp lệ' });
         }
 
         const eventData = {
             title,
             content,
+            label,
             type,
             createdBy: new mongoose.Types.ObjectId(req.user.userId),
             lotteryFields: type === 'event' ? {
                 bachThuLo: !!lotteryFields?.bachThuLo,
                 songThuLo: !!lotteryFields?.songThuLo,
                 threeCL: !!lotteryFields?.threeCL,
-                cham: !!lotteryFields?.cham
+                cham: !!lotteryFields?.cham,
+                danDe: !!lotteryFields?.danDe,
+                danDeType: lotteryFields?.danDe ? lotteryFields.danDeType || null : null
             } : {
                 bachThuLo: false,
                 songThuLo: false,
                 threeCL: false,
-                cham: false
+                cham: false,
+                danDe: false,
+                danDeType: null
             },
             viewCount: 0,
             createdAt: moment.tz('Asia/Ho_Chi_Minh').toDate(),
@@ -127,8 +141,8 @@ router.post('/', authenticate, async (req, res, next) => {
         };
 
         if (type !== 'discussion') {
-            if (startTime) eventData.startTime = moment.tz(startTime, 'Asia/Ho_Chi_Minh').toDate();
-            if (endTime) eventData.endTime = moment.tz(endTime, 'Asia/Ho_Chi_Minh').toDate();
+            eventData.startTime = startTime ? moment.tz(startTime, 'Asia/Ho_Chi_Minh').toDate() : moment.tz('Asia/Ho_Chi_Minh').toDate();
+            eventData.endTime = moment.tz(endTime, 'Asia/Ho_Chi_Minh').toDate();
             if (rules?.trim()) eventData.rules = rules.trim();
             if (rewards?.trim()) eventData.rewards = rewards.trim();
             if (scoringMethod?.trim()) eventData.scoringMethod = scoringMethod.trim();
@@ -213,16 +227,22 @@ router.put('/:id', authenticate, isAdmin, async (req, res) => {
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({ message: 'ID sự kiện không hợp lệ' });
         }
-        const { title, content, type, lotteryFields, startTime, endTime, rules, rewards, scoringMethod, notes } = req.body;
+        const { title, content, label, type, lotteryFields, startTime, endTime, rules, rewards, scoringMethod, notes } = req.body;
 
         if (!['event', 'hot_news', 'discussion'].includes(type)) {
             return res.status(400).json({ message: 'Loại không hợp lệ' });
         }
-        if (!title || !content) {
-            return res.status(400).json({ message: 'Tiêu đề và nội dung là bắt buộc' });
+        if (!title || !content || !label) {
+            return res.status(400).json({ message: 'Tiêu đề, nội dung và nhãn là bắt buộc' });
+        }
+        if (type !== 'discussion' && !endTime) {
+            return res.status(400).json({ message: 'Thời gian kết thúc là bắt buộc cho sự kiện hoặc tin hot' });
         }
         if (type !== 'discussion' && startTime && endTime && moment(endTime).isBefore(startTime)) {
             return res.status(400).json({ message: 'Thời gian kết thúc phải sau thời gian bắt đầu' });
+        }
+        if (type === 'event' && lotteryFields?.danDe && !validDanDeTypes.includes(lotteryFields.danDeType)) {
+            return res.status(400).json({ message: 'Loại dàn đề không hợp lệ' });
         }
 
         const event = await Event.findById(id);
@@ -233,26 +253,31 @@ router.put('/:id', authenticate, isAdmin, async (req, res) => {
         const eventData = {
             title,
             content,
+            label,
             type,
             lotteryFields: type === 'event' ? {
                 bachThuLo: !!lotteryFields?.bachThuLo,
                 songThuLo: !!lotteryFields?.songThuLo,
                 threeCL: !!lotteryFields?.threeCL,
-                cham: !!lotteryFields?.cham
+                cham: !!lotteryFields?.cham,
+                danDe: !!lotteryFields?.danDe,
+                danDeType: lotteryFields?.danDe ? lotteryFields.danDeType || null : null
             } : {
                 bachThuLo: false,
                 songThuLo: false,
                 threeCL: false,
-                cham: false
+                cham: false,
+                danDe: false,
+                danDeType: null
             },
             updatedAt: moment.tz('Asia/Ho_Chi_Minh').toDate()
         };
 
         if (type !== 'discussion') {
-            if (startTime) eventData.startTime = moment.tz(startTime, 'Asia/Ho_Chi_Minh').toDate();
-            if (endTime) eventData.endTime = moment.tz(endTime, 'Asia/Ho_Chi_Minh').toDate();
+            eventData.startTime = startTime ? moment.tz(startTime, 'Asia/Ho_Chi_Minh').toDate() : moment.tz('Asia/Ho_Chi_Minh').toDate();
+            eventData.endTime = moment.tz(endTime, 'Asia/Ho_Chi_Minh').toDate();
             if (rules?.trim()) eventData.rules = rules.trim();
-            if (rewards?.trim()) eventData.rewards = rewards.trim();
+            if (rewards?.trim()) eventData.rewards = rules.trim();
             if (scoringMethod?.trim()) eventData.scoringMethod = scoringMethod.trim();
             if (notes?.trim()) eventData.notes = notes.trim();
         }
