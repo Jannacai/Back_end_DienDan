@@ -277,7 +277,7 @@ router.put('/:id', authenticate, isAdmin, async (req, res) => {
             eventData.startTime = startTime ? moment.tz(startTime, 'Asia/Ho_Chi_Minh').toDate() : moment.tz('Asia/Ho_Chi_Minh').toDate();
             eventData.endTime = moment.tz(endTime, 'Asia/Ho_Chi_Minh').toDate();
             if (rules?.trim()) eventData.rules = rules.trim();
-            if (rewards?.trim()) eventData.rewards = rules.trim();
+            if (rewards?.trim()) eventData.rewards = rewards.trim();
             if (scoringMethod?.trim()) eventData.scoringMethod = scoringMethod.trim();
             if (notes?.trim()) eventData.notes = notes.trim();
         }
