@@ -166,6 +166,28 @@ router.get("/list", async (req, res) => {
         res.status(500).json({ error: "Không thể tải danh sách người dùng cho UserList", details: error.message });
     }
 });
+
+// Thêm endpoint cho new-registrations
+router.get("/new-registrations", async (req, res) => {
+    try {
+        // Lấy 5 người dùng đăng ký mới nhất trong 7 ngày qua
+        const sevenDaysAgo = moment().tz('Asia/Ho_Chi_Minh').subtract(7, 'days').toDate();
+        const users = await userModel
+            .find({
+                createdAt: { $gte: sevenDaysAgo }
+            })
+            .select("fullname img role createdAt")
+            .sort({ createdAt: -1 })
+            .limit(5);
+        
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.status(200).json({ users });
+    } catch (error) {
+        console.error("Error in /users/new-registrations:", error.message);
+        res.status(500).json({ error: "Không thể tải danh sách người dùng đăng ký mới", details: error.message });
+    }
+});
+
 router.get("/:id", async (req, res) => {
     try {
         const { id } = req.params;
