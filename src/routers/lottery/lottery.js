@@ -47,11 +47,7 @@ const checkLotteryResults = async (region, Model) => {
 
         if (!result) {
             console.error(`Không tìm thấy kết quả ${region} cho ngày: `, today.toISOString());
-            broadcastComment({
-                type: 'LOTTERY_RESULT_ERROR',
-                data: { message: `Không tìm thấy kết quả ${region} cho ngày hiện tại` },
-                room: 'lotteryFeed'
-            });
+            // Removed lotteryFeed broadcast for thongbao.js component
             return;
         }
 
@@ -227,11 +223,7 @@ const checkLotteryResults = async (region, Model) => {
         console.log(`Hoàn tất đối chiếu kết quả ${region}.`);
     } catch (err) {
         console.error(`Lỗi khi đối chiếu kết quả ${region}: `, err.message);
-        broadcastComment({
-            type: 'LOTTERY_RESULT_ERROR',
-            data: { message: `Lỗi khi đối chiếu kết quả ${region}` },
-            room: 'lotteryFeed'
-        });
+        // Removed lotteryFeed broadcast for thongbao.js component
     }
 };
 

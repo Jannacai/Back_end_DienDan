@@ -180,35 +180,12 @@ router.post('/', authenticate, async (req, res, next) => {
         });
         const notifications = await Promise.all(notificationPromises);
 
-        notifications.forEach(notification => {
-            console.log(`Broadcasting NEW_EVENT to user:${notification.userId} (role: ${users.find(u => u._id.toString() === notification.userId.toString())?.role})`);
-            broadcastComment({
-                type: 'NEW_EVENT',
-                data: {
-                    notificationId: notification._id.toString(),
-                    userId: notification.userId.toString(),
-                    type: 'NEW_EVENT',
-                    content: notification.content,
-                    isRead: false,
-                    createdAt: notification.createdAt,
-                    eventId: event._id.toString(),
-                    createdBy: populatedEvent.createdBy
-                },
-                room: `user:${notification.userId} `
-            });
-        });
+        // Removed broadcast calls for components that no longer use Socket.IO
 
         const populatedNotification = await LotteryRegistration.findById(eventNotification._id)
             .populate('userId', 'username fullname img titles points winCount')
             .lean();
-        broadcastComment({
-            type: 'NEW_EVENT_NOTIFICATION',
-            data: {
-                ...populatedNotification,
-                eventId: populatedNotification.eventId.toString()
-            },
-            room: 'lotteryFeed'
-        });
+        // Removed lotteryFeed broadcast for thongbao.js component
 
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         res.status(201).json({
@@ -288,11 +265,7 @@ router.put('/:id', authenticate, isAdmin, async (req, res) => {
             .populate('createdBy', 'username fullname img')
             .lean();
 
-        broadcastComment({
-            type: 'EVENT_UPDATED',
-            data: populatedEvent,
-            room: 'lotteryFeed'
-        });
+        // Removed lotteryFeed broadcast for thongbao.js component
 
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         res.status(200).json({
@@ -319,11 +292,7 @@ router.delete('/:id', authenticate, isAdmin, async (req, res) => {
         await LotteryRegistration.deleteMany({ eventId: id });
         await Notification.deleteMany({ eventId: id });
 
-        broadcastComment({
-            type: 'EVENT_DELETED',
-            data: { eventId: id, type: event.type },
-            room: 'lotteryFeed'
-        });
+        // Removed lotteryFeed broadcast for thongbao.js component
 
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         res.status(200).json({ message: 'Xóa sự kiện thành công' });

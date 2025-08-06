@@ -179,7 +179,7 @@ router.get("/new-registrations", async (req, res) => {
             .select("fullname img role createdAt")
             .sort({ createdAt: -1 })
             .limit(5);
-        
+
         res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         res.status(200).json({ users });
     } catch (error) {
@@ -236,12 +236,7 @@ router.put("/:id", authenticate, isAdmin, async (req, res) => {
             data: userUpdateData,
             room: 'leaderboard'
         });
-        console.log('Broadcasting USER_UPDATED:', { room: 'lotteryFeed', data: userUpdateData });
-        broadcastComment({
-            type: 'USER_UPDATED',
-            data: userUpdateData,
-            room: 'lotteryFeed'
-        });
+        // Removed lotteryFeed broadcast for thongbao.js component
 
         // Nếu điểm thay đổi, tạo thông báo phát thưởng
         if (points !== undefined && points > oldPoints) {
@@ -309,32 +304,7 @@ router.put("/:id", authenticate, isAdmin, async (req, res) => {
                 .populate('eventId', 'title')
                 .lean();
 
-            console.log('Broadcasting USER_REWARDED:', {
-                room: 'lotteryFeed', data: {
-                    registrationId: populatedLotteryRegistration._id.toString(),
-                    userId: populatedLotteryRegistration.userId._id.toString(),
-                    pointsAwarded,
-                    eventTitle
-                }
-            });
-            broadcastComment({
-                type: 'USER_REWARDED',
-                data: {
-                    registrationId: populatedLotteryRegistration._id.toString(),
-                    userId: populatedLotteryRegistration.userId._id.toString(),
-                    username: populatedLotteryRegistration.userId.username,
-                    fullname: populatedLotteryRegistration.userId.fullname,
-                    img: populatedLotteryRegistration.userId.img,
-                    titles: populatedLotteryRegistration.userId.titles,
-                    points: populatedLotteryRegistration.userId.points,
-                    winCount: populatedLotteryRegistration.userId.winCount,
-                    pointsAwarded,
-                    eventTitle,
-                    eventId: eventId ? eventId.toString() : null,
-                    awardedAt: populatedLotteryRegistration.createdAt
-                },
-                room: 'lotteryFeed'
-            });
+            // Removed lotteryFeed broadcast for thongbao.js component
         }
 
         res.status(200).json({ message: "Cập nhật thông tin người dùng thành công", user: updatedUser });
@@ -388,12 +358,7 @@ router.post("/reward", authenticate, isAdmin, async (req, res) => {
             data: userUpdateData,
             room: 'leaderboard'
         });
-        console.log('Broadcasting USER_UPDATED:', { room: 'lotteryFeed', data: userUpdateData });
-        broadcastComment({
-            type: 'USER_UPDATED',
-            data: userUpdateData,
-            room: 'lotteryFeed'
-        });
+        // Removed lotteryFeed broadcast for thongbao.js component
 
         // Phát thông báo USER_REWARDED cho UserAvatar
         console.log('Broadcasting USER_REWARDED:', {
@@ -440,32 +405,7 @@ router.post("/reward", authenticate, isAdmin, async (req, res) => {
             .populate('eventId', 'title')
             .lean();
 
-        console.log('Broadcasting USER_REWARDED:', {
-            room: 'lotteryFeed', data: {
-                registrationId: populatedLotteryRegistration._id.toString(),
-                userId: populatedLotteryRegistration.userId._id.toString(),
-                pointsAwarded: points,
-                eventTitle
-            }
-        });
-        broadcastComment({
-            type: 'USER_REWARDED',
-            data: {
-                registrationId: populatedLotteryRegistration._id.toString(),
-                userId: populatedLotteryRegistration.userId._id.toString(),
-                username: populatedLotteryRegistration.userId.username,
-                fullname: populatedLotteryRegistration.userId.fullname,
-                img: populatedLotteryRegistration.userId.img,
-                titles: populatedLotteryRegistration.userId.titles,
-                points: populatedLotteryRegistration.userId.points,
-                winCount: populatedLotteryRegistration.userId.winCount,
-                pointsAwarded: points,
-                eventTitle,
-                eventId: eventId ? eventId.toString() : null,
-                awardedAt: populatedLotteryRegistration.createdAt
-            },
-            room: 'lotteryFeed'
-        });
+        // Removed lotteryFeed broadcast for thongbao.js component
 
         res.status(200).json({ message: "Phát thưởng thành công", user: updatedUser });
     } catch (error) {
@@ -544,12 +484,7 @@ router.post("/upload-avatar", authenticate, upload.single('avatar'), async (req,
             data: userUpdateData,
             room: 'leaderboard'
         });
-        console.log('Broadcasting USER_UPDATED:', { room: 'lotteryFeed', data: userUpdateData });
-        broadcastComment({
-            type: 'USER_UPDATED',
-            data: userUpdateData,
-            room: 'lotteryFeed'
-        });
+        // Removed lotteryFeed broadcast for thongbao.js component
 
         res.status(200).json({ message: "Tải ảnh đại diện thành công", user });
     } catch (error) {
